@@ -1,2 +1,10 @@
-google-genai==2.2.0
-python-dotenv==1.2.2
+streamlit
+groq
+sentence-transformers
+pdfplumber
+PyPDF2
+python-dotenv
+numpy
+torchvision
+torch
+transformers
