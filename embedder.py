@@ -3,7 +3,7 @@ import os
 import json
 
 # runs on your laptop - completely free, no API key needed
-model = SentenceTransformer('all-MiniLM-L6-v2')
+model = SentenceTransformer('BAAI/bge-small-en-v1.5')
 
 def embed_chunks(all_chunks):
     print(f"Embedding {len(all_chunks)} chunks...")
