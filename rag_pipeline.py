@@ -7,12 +7,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# models
 embedding_model = SentenceTransformer('BAAI/bge-small-en-v1.5')
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
-# model config - change only this line to switch
 GROQ_MODEL = "llama-3.3-70b-versatile"
+
+# conversation memory
+chat_history = []
 
 def load_embeddings(file="embeddings.json"):
     with open(file, "r") as f:
@@ -34,39 +34,53 @@ def search(question, all_data, top_k=3):
 
 def build_context(results):
     context = ""
-    for i, (score, item) in enumerate(results):
+    for score, item in results:
         context += f"[Source: {item['source']}]\n{item['text']}\n\n"
     return context
 
 def ask(question, all_data):
+    global chat_history
+    
     # step 1: find relevant chunks
     results = search(question, all_data)
-    
-    # step 2: build context from chunks
     context = build_context(results)
     
-    # step 3: build prompt
-    prompt = f"""You are a helpful study assistant. Answer the question using ONLY the context provided below.
-If the answer is not in the context, say "I could not find this in the provided documents."
-Always mention which source document you used.
-
-Context:
-{context}
-
-Question: {question}
-
-Answer:"""
+    # step 2: build messages with history
+    messages = []
     
-    # step 4: ask Groq
+    # system message
+    messages.append({
+        "role": "system",
+        "content": """You are a helpful study assistant for DBMS. 
+Answer questions using ONLY the context provided.
+If the answer is not in the context say 'I could not find this in the provided documents.'
+Always mention which source document you used.
+Keep answers clear and concise."""
+    })
+    
+    # add last 3 conversations as memory
+    for prev_q, prev_a in chat_history[-3:]:
+        messages.append({"role": "user", "content": prev_q})
+        messages.append({"role": "assistant", "content": prev_a})
+    
+    # add current question with context
+    messages.append({
+        "role": "user",
+        "content": f"Context:\n{context}\n\nQuestion: {question}"
+    })
+    
+    # step 3: ask Groq
     response = groq_client.chat.completions.create(
         model=GROQ_MODEL,
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         max_tokens=500
     )
     
     answer = response.choices[0].message.content
     
-    # step 5: return answer with sources
+    # step 4: save to memory
+    chat_history.append((question, answer))
+    
     sources = list(set([item['source'] for _, item in results]))
     return {
         "question": question,
@@ -75,23 +89,31 @@ Answer:"""
         "top_score": float(results[0][0])
     }
 
+def clear_history():
+    global chat_history
+    chat_history = []
+    print("Chat history cleared!")
+
 if __name__ == "__main__":
     print("Loading embeddings...")
     all_data = load_embeddings()
-    print(f"Loaded {len(all_data)} embeddings\n")
+    print(f"Loaded {len(all_data)} embeddings")
+    print("\n🤖 DBMS Study Assistant Ready!")
+    print("Type 'quit' to exit | 'clear' to reset memory\n")
     
-    # test questions
-    questions = [
-        "what is a primary key?",
-        "explain ACID properties of transactions",
-        "what is normalization and why is it important?"
-    ]
-    
-    for question in questions:
-        print(f"Q: {question}")
-        print("-" * 50)
+    while True:
+        question = input("You: ").strip()
+        
+        if not question:
+            continue
+        if question.lower() == 'quit':
+            print("Goodbye!")
+            break
+        if question.lower() == 'clear':
+            clear_history()
+            continue
+        
         result = ask(question, all_data)
-        print(f"A: {result['answer']}")
-        print(f"\nSources: {result['sources']}")
-        print(f"Confidence: {result['top_score']:.3f}")
-        print("=" * 60 + "\n")
+        print(f"\nAssistant: {result['answer']}")
+        print(f"Source: {result['sources']}")
+        print(f"Confidence: {result['top_score']:.3f}\n")
